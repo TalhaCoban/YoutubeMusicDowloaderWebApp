@@ -1,13 +1,14 @@
 import flask
-from flask import request, jsonify, abort, Response
+from flask import request, jsonify, abort, Response, request, stream_with_context
 from pydantic import ValidationError
 from video_handler import VideoHandler
 from ydl_options import YDLOptions
-
+from flask_cors import CORS
 
 
 app = flask.Flask(__name__)
 app.config["DEBUG"] = False
+CORS(app) 
 
 
 @app.route('/api', methods=['GET'])
@@ -101,6 +102,53 @@ def downloadaudio():
         abort(500, description=f"An error happend: {e}")
 
 
+
+@app.route('/api/downloadmusic/', methods=['POST'])
+def downloadmusic():
+    print("merabalar amk")
+    data = request.get_json()
+    if not data or 'url' not in data or 'format_id' not in data:
+        abort(400, description="Missing or invalid parameter")
+
+    video_url = data['url']
+    audio_format_id = str(data['format_id'])
+    title = data.get('title', None)
+
+    try:
+        videohandler = VideoHandler(url=video_url)
+        ydlOptions = YDLOptions(videohandler.video)
+        ydlOptions.setAudioFormat(audio_format_id)
+
+        if title is None:
+            title = videohandler.video.title
+
+        ydlOptions.setTitle(title)
+        ydl_opts_object = ydlOptions.getYDLOptionsObject()
+        stream_url = ydlOptions.audioFormat.url
+        filesize = ydlOptions.audioFormat.filesize
+
+        def generate():
+            downloaded = 0
+
+            for chunk in videohandler.streamAudio(stream_url):
+                downloaded += len(chunk)
+                yield chunk  # Send each chunk directly to the client
+
+            print(f"Download complete. Total size: {downloaded / (1024 * 1024):.2f} MB")
+
+        # Set response headers for file download
+        headers = {
+            "Content-Type": f"audio/{ydlOptions.ext}",
+            "Content-Disposition": f"attachment; filename={turkish_to_english(ydl_opts_object.outtmpl)}",
+        }
+
+        return Response(stream_with_context(generate()), headers=headers)
+
+    except ValidationError as e:
+        abort(400, description=f"Validation error: {e}")
+
+    except Exception as e:
+        abort(500, description=f"An error happened: {e}")
 
 
 

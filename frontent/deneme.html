@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Downloader</title>
+    <script>
+        async function downloadMusic(event) {
+            event.preventDefault();
+
+            const url = document.getElementById("url").value;
+            const formatId = document.getElementById("formatId").value;
+
+            if (!url || !formatId) {
+                alert("Please enter both URL and Format ID!");
+                return;
+            }
+
+            try {
+                // API'ye POST isteği gönder
+                const response = await fetch("http://127.0.0.1:5000/api/downloadmusic/", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        url: url,
+                        format_id: formatId
+                    })
+                });
+
+                // Yanıt durumunu kontrol et
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Error: ${response.status} - ${errorText}`);
+                }
+
+                // Content-Disposition başlığını al
+                const contentDisposition = response.headers.get("Content-Disposition");
+                let filename = "audio_file.mp3";  // Varsayılan dosya ismi
+
+                // Content-Disposition başlığı varsa dosya ismini al
+                if (contentDisposition) {
+                    const matches = contentDisposition.match(/filename="(.+)"/);
+                    if (matches && matches[1]) {
+                        filename = matches[1];
+                    }
+                }
+
+                console.log("Downloading:", filename);  // Dosya ismi
+
+                const reader = response.body.getReader();
+                const contentLength = parseInt(response.headers.get("Content-Length"));
+                let receivedLength = 0;
+                const chunks = [];
+
+                const progressBar = document.getElementById("progressBar");
+                progressBar.value = 0;
+
+                while (true) {
+                    // Asenkron olarak her seferinde chunk verisi alınır
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    chunks.push(value);
+                    receivedLength += value.length;
+
+                    // İlerleme çubuğunu güncelle
+                    if (contentLength) {
+                        const progress = (receivedLength / contentLength) * 100;
+                        progressBar.value = progress;
+                        document.getElementById("progressPercent").innerText = `${progress.toFixed(2)}%`;
+                    }
+                }
+
+                // Blob'u oluştur ve indir
+                const blob = new Blob(chunks);
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = downloadUrl;
+                a.download = filename; // Dinamik dosya adı
+                a.click();
+                window.URL.revokeObjectURL(downloadUrl);
+                alert("Download completed!");
+
+            } catch (error) {
+                console.error("Download error:", error);
+                alert("An error occurred. Check the console for details.");
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Music Downloader</h1>
+    <form onsubmit="downloadMusic(event)">
+        <label for="url">YouTube URL:</label>
+        <input type="text" id="url" placeholder="Enter YouTube URL" required>
+        <br><br>
+        <label for="formatId">Format ID:</label>
+        <input type="text" id="formatId" placeholder="Enter Format ID (e.g., 140)" value="140" required>
+        <br><br>
+        <label for="formatId">Name:</label>
+        <button type="submit">Download</button>
+    </form>
+    <br>
+    <progress id="progressBar" value="0" max="100" style="width: 100%;"></progress>
+    <p id="progressPercent">0%</p>
+</body>
+</html>
